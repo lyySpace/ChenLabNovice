@@ -50,24 +50,24 @@ def MIP_scatter(pc1, pc2, points):
   return x_proj, y_proj
 
 def MIP_pixel(pc1, pc2, image):
-    x, y, z = np.indices(image.shape)
-    proj_x = x * pc1[0] + y * pc1[1] + z * pc1[2]
-    proj_y = x * pc2[0] + y * pc2[1] + z * pc2[2]
+  x, y, z = np.indices(image.shape)
+  proj_x = x * pc1[0] + y * pc1[1] + z * pc1[2]
+  proj_y = x * pc2[0] + y * pc2[1] + z * pc2[2]
     
-    # 四捨五入並轉換為整數
-    proj_x = np.round(proj_x).astype(int)
-    proj_y = np.round(proj_y).astype(int)
+  # 四捨五入並轉換為整數
+  proj_x = np.round(proj_x).astype(int)
+  proj_y = np.round(proj_y).astype(int)
 
-    # let min == 0 
-    proj_x -= proj_x.min()
-    proj_y -= proj_y.min()
+  # let min == 0 
+  proj_x -= proj_x.min()
+  proj_y -= proj_y.min()
 
-    max_x, max_y = proj_x.max() + 1, proj_y.max() + 1
+  max_x, max_y = proj_x.max() + 1, proj_y.max() + 1
 
-    mip_image = np.zeros((max_x, max_y))
-    np.maximum.at(mip_image, (proj_x.ravel(), proj_y.ravel()), image.ravel())
+  mip_image = np.zeros((max_x, max_y))
+  np.maximum.at(mip_image, (proj_x.ravel(), proj_y.ravel()), image.ravel())
 
-    return mip_image
+  return mip_image
 
 
 '''Main'''
