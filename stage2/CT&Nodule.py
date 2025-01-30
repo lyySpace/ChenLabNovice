@@ -77,7 +77,7 @@ def LocalizetheNodule(data, tx, ty): # with coordinates (x, y, z) in mm.
   x = ImagePosition[0] + (tx * ImageOrientation[0] + ty * ImageOrientation[3])
   y = ImagePosition[1] + (tx * ImageOrientation[1] + ty * ImageOrientation[4])
   z = ImagePosition[2] + (tx * ImageOrientation[2] + ty * ImageOrientation[5])
-
+  print("Localize the Nodule with coordinates (x, y, z) in mm.")
   return (x, y, z)
 
 '''Main'''
@@ -87,7 +87,7 @@ data_folders = [
   "/home/lyy/chenMLNovice/data/HW1data/data3", 
   "/home/lyy/chenMLNovice/data/HW1data/data4"
 ]
-'''
+
 for data in data_folders:
   # read path
   path = ReadDICOM(data) 
@@ -97,7 +97,6 @@ for data in data_folders:
   
   # CT parameters
   CTparameter, thin_cut, low_dose, contrasted = ExtractCTparameter(CTdata)
-  print("-" * 60)
   print(f"\nCT Parameters for folder {data}:")
   df = pd.DataFrame(CTparameter)
   print(df)
@@ -106,7 +105,9 @@ for data in data_folders:
   print(f"Thin-cut CT: {'Yes' if thin_cut else 'No'}")
   print(f"Low-dose CT: {'Yes' if low_dose else 'No'}")
   print(f"Contrast CT: {'Yes' if contrasted else 'No'}")
-'''
+  print("-" * 60)
+
+
 
 print(LocalizetheNodule(data_folders[0], 1, 1))
 
