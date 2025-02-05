@@ -105,7 +105,7 @@ def extract_radiomic_features(data):
 pickle_folder = '/home/lyy/chenMLNovice/data/LIDC_2_label_data/LIDC_label_test/'
 pickle_path = [os.path.join(pickle_folder, f) for f in os.listdir(pickle_folder) if f.endswith('.pickle')]
 
-pickle_path = pickle_path[:100]  # 測試時僅使用前 50 個檔案
+# pickle_path = pickle_path[:100]  # 測試時僅使用前 50 個檔案
 
 data = []
 for p in pickle_path:

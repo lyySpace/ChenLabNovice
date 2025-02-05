@@ -1,0 +1,188 @@
+import numpy as np
+import pickle
+import matplotlib.pyplot as plt
+from radiomics import featureextractor
+import SimpleITK as sitk
+import os
+from sklearn.preprocessing import StandardScaler
+import pandas as pd
+from sklearn.linear_model import LogisticRegression
+from sklearn.decomposition import PCA
+from sklearn.model_selection import KFold
+from sklearn.metrics import accuracy_score
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense
+from sklearn.metrics import roc_curve, auc
+
+def extract_radiomic_features(data):
+    features = []
+    labels = []
+    for pickle in data:  # 3D
+        extractor = featureextractor.RadiomicsFeatureExtractor()
+        extractor.disableAllFeatures()
+        extractor.enableFeatureClassByName('glcm')  
+
+        img = sitk.GetImageFromArray(pickle['img'])
+        mask = sitk.GetImageFromArray(pickle['mask'])
+
+        feature_vector = extractor.execute(img, mask)
+
+        # ensure only numbers
+        selected_features = {k: v for k, v in feature_vector.items() if 'glcm' in k.lower()}
+
+        features.append([float(v) for v in selected_features.values()])
+        labels.append(pickle['label'])
+    
+    return np.array(features), np.array(labels)
+
+def build_ANN_model(input_shape): # ANN Model
+    '''
+    Keras Sequential MLP 模型
+        32 個 ReLU 神經元
+        16 個 ReLU 神經元
+        1 個 Sigmoid 輸出層 (二元分類)
+    使用 Adam 優化器與 binary_crossentropy 損失函數
+    '''
+    model = Sequential([
+        Dense(32, activation='relu', input_shape=(input_shape,)),
+        Dense(16, activation='relu'),
+        Dense(1, activation='sigmoid')
+    ])
+    model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+    return model
+
+''' Load Data '''
+# internal 
+pickle_folder = '/home/lyy/chenMLNovice/data/LIDC_2_label_data/LIDC_label_test/'
+pickle_path = [os.path.join(pickle_folder, f) for f in os.listdir(pickle_folder) if f.endswith('.pickle')]
+
+data = []
+for p in pickle_path:
+    with open(p, 'rb') as f:
+        data.append(pickle.load(f))
+
+features, labels = extract_radiomic_features(data)
+
+scaler = StandardScaler() # 標準化數據
+features_scaled = scaler.fit_transform(features)
+
+''' K-fold Cross-validation '''
+kf = KFold(n_splits=5, shuffle=True, random_state=42) # setup
+
+K_logistic_accuracy = []
+K_ann_accuracy = []
+
+K_logistic_FPR, K_logistic_TPR, K_logistic_AUC = [], [], []
+K_ann_FPR, K_ann_TPR, K_ann_AUC = [], [], []
+
+for train_idx, test_idx in kf.split(features_scaled):
+    X_train, X_test = features_scaled[train_idx], features_scaled[test_idx]
+    y_train, y_test = labels[train_idx], labels[test_idx]
+    
+    # 1. Logistic Regression
+    log_model = LogisticRegression()
+    log_model.fit(X_train, y_train)
+
+    y_pred_log = log_model.predict(X_test)
+    K_logistic_accuracy.append(accuracy_score(y_test, y_pred_log))
+    
+    y_prob_log = log_model.predict_proba(X_test)[:, 1] 
+    fpr_log, tpr_log, _ = roc_curve(y_test, y_prob_log)
+    K_logistic_FPR.append(fpr_log)
+    K_logistic_TPR.append(tpr_log)
+    K_logistic_AUC.append(auc(fpr_log, tpr_log))
+    
+    # 2. ANN Model
+    ann_model = build_ANN_model(X_train.shape[1])
+    ann_model.fit(X_train, y_train, epochs=50, batch_size=8, verbose=0)
+    
+    _, ann_acc = ann_model.evaluate(X_test, y_test, verbose=0)
+    K_ann_accuracy.append(ann_acc)
+
+    y_prob_ann = ann_model.predict(X_test).ravel()  
+    fpr_ann, tpr_ann, _ = roc_curve(y_test, y_prob_ann)  
+    K_ann_FPR.append(fpr_ann)
+    K_ann_TPR.append(tpr_ann)
+    K_ann_AUC.append(auc(fpr_ann, tpr_ann))
+
+
+''' External Validation '''
+# external data
+external_pickle_folder = '/home/lyy/chenMLNovice/data/LIDC_2_label_data/LIDC_label_test/'
+external_pickle_path = [os.path.join(external_pickle_folder, f) for f in os.listdir(external_pickle_folder) if f.endswith('.pickle')]
+
+external_data = []
+for p in external_pickle_path:
+    with open(p, 'rb') as f:
+        external_data.append(pickle.load(f))
+
+external_features, external_labels = extract_radiomic_features(external_data)
+
+scaler = StandardScaler() # 標準化數據
+external_features_scaled = scaler.fit_transform(external_features)
+
+# 1. Logistic Regression
+log_model = LogisticRegression()
+log_model.fit(features_scaled, labels)  
+y_pred_log_external = log_model.predict(external_features_scaled)
+Ex_logistic_accuracy  = accuracy_score(external_labels, y_pred_log_external)
+
+y_prob_log_external = log_model.predict_proba(external_features_scaled)[:, 1]
+Ex_logistic_FPR, Ex_logistic_TPR, _ = roc_curve(external_labels, y_pred_log_external)
+Ex_logistic_AUC = auc(Ex_logistic_FPR, Ex_logistic_TPR)
+
+# 2. ANN Model
+ann_model = build_ANN_model(external_features_scaled.shape[1])
+ann_model.fit(X_train, y_train, epochs=50, batch_size=8, verbose=0)
+_, Ex_ann_accuracy = ann_model.evaluate(external_features_scaled, external_labels, verbose=0)
+
+y_prob_ann_external = ann_model.predict(external_features_scaled).ravel()
+Ex_ann_FPR, Ex_ann_TPR, _ = roc_curve(external_labels, y_prob_ann_external)
+Ex_ann_AUC = auc(Ex_ann_FPR, Ex_ann_TPR)
+
+''' Result '''
+print("-" * 30)
+print("K-fold Cross-validation")
+print(f'Logistic Regression Avg Accuracy: {np.mean(K_logistic_accuracy):.4f}') # average
+print(f'ANN Avg Accuracy: {np.mean(K_ann_accuracy):.4f}') # average
+print("-" * 30)
+print("External Validation")
+print(f'Logistic Regression Accuracy: {Ex_logistic_accuracy:.4f}')
+print(f'ANN Accuracy: {Ex_ann_accuracy:.4f}')
+
+'''ROC curve
+Y: Sensitivity = TPR(True Positive Rate)
+X: 1-Specificity = FPR (False Positive Rate)
+'''
+plt.figure(figsize=(10, 8))
+
+# K-fold Validation (平均 ROC 曲線)
+K_logistic_FPR_means = [np.mean(fpr) for fpr in K_logistic_FPR]
+K_logistic_FPR_mean = np.mean(K_logistic_FPR_means)
+K_logistic_TPR_means = [np.mean(tpr) for tpr in K_logistic_TPR]
+K_logistic_TPR_mean = np.mean(K_logistic_TPR_means)
+K_logistic_AUC_mean = np.mean(K_logistic_AUC)
+
+K_ann_FPR_means = [np.mean(fpr) for fpr in K_ann_FPR]
+K_ann_FPR_mean = np.mean(K_ann_FPR_means)
+K_ann_TPR_means = [np.mean(tpr) for tpr in K_ann_TPR]
+K_ann_TPR_mean = np.mean(K_ann_TPR_means)
+K_ann_AUC_mean = np.mean(K_ann_AUC)
+
+plt.plot(K_logistic_FPR_mean, K_logistic_TPR_mean, label=f'Logistic Regression (K-fold Avg AUC: {K_logistic_AUC_mean:.2f})', linewidth=2, linestyle='-', color='blue')
+plt.plot(K_ann_FPR_mean, K_ann_TPR_mean, label=f'ANN (K-fold Avg AUC: {K_ann_AUC_mean:.2f})', linewidth=2, linestyle='-', color='green')
+
+# External Validation
+plt.plot(Ex_logistic_FPR, Ex_logistic_TPR, label=f'Logistic Regression (External AUC: {Ex_logistic_AUC:.2f})', color='red')
+plt.plot(Ex_ann_FPR, Ex_ann_TPR, label=f'ANN (External AUC: {Ex_ann_AUC:.2f})', color='orange')
+
+plt.plot([0, 1], [0, 1], 'k--')  # Diagonal line (random guess)
+plt.xlim([0.0, 1.0])
+plt.ylim([0.0, 1.05])
+plt.xlabel('1-Specificity = FPR')
+plt.ylabel('Sensitivity = TPR')
+plt.title('Receiver Operating Characteristic (ROC) Curve')
+plt.legend(loc='lower right')
+plt.show()
