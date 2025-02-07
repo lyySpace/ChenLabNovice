@@ -12,8 +12,8 @@ from sklearn.model_selection import KFold
 from sklearn.metrics import accuracy_score
 import tensorflow as tf
 from tensorflow import keras
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense
+from tensorflow.keras.models import Sequential # type: ignore
+from tensorflow.keras.layers import Dense # type: ignore
 from sklearn.metrics import roc_curve, auc
 from sklearn.metrics import recall_score, confusion_matrix
 from statsmodels.stats.contingency_tables import mcnemar
